@@ -1,5 +1,5 @@
 require("dotenv").config();
-const ytdl = require('ytdl-core');
+const ytdl = require("@distube/ytdl-core");
 const fs = require('node:fs');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('node:path');
@@ -18,6 +18,41 @@ function ensureDir(dir) {
         fs.mkdirSync(dir, { recursive: true });
     }
 }
+/**
+ * 
+ * @param {number} ms 
+ * @returns {string}
+ */
+function prettyPrintMs(ms) {
+    if (ms < 0) ms = -ms;
+
+    const time = {
+        day: Math.floor(ms / 86400000),
+        hour: Math.floor(ms / 3600000) % 24,
+        minute: Math.floor(ms / 60000) % 60,
+        second: Math.floor(ms / 1000) % 60,
+        millisecond: Math.floor(ms) % 1000,
+    };
+
+    const parts = [];
+    if (time.day > 0) parts.push(`${time.day}d`);
+    if (time.hour > 0) parts.push(`${time.hour}h`);
+    if (time.minute > 0) parts.push(`${time.minute}m`);
+    if (time.second > 0) parts.push(`${time.second}s`);
+    if (time.millisecond > 0) parts.push(`${time.millisecond}ms`);
+
+    return parts.join(' ') || '0ms';
+}
+/**
+ * 
+ * @param {string} time 
+ * @returns {string}
+ */
+function formatTime(time) {
+    const ms = Math.round(Number.parseInt(time) * 1000);
+
+    return prettyPrintMs(ms);
+}
 
 /**
  * 
@@ -35,7 +70,7 @@ async function downloadVideoAsMp3(videoUrl, outputDir) {
         // Create a read stream from ytdl
         const stream = ytdl(videoUrl, { filter: 'audioonly' });
 
-        console.log(`Downloading: ${title}`);
+        console.log(`Downloading: ${title} ${info.videoDetails.author.name.replace("- Topic", "")} ${formatTime(info.videoDetails.lengthSeconds)}`);
 
         // Create an ffmpeg command to convert the audio stream to MP3
         await new Promise((resolve, reject) => {
@@ -121,25 +156,33 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
-if (process.env.ffmpegPath) {
-    //  @todo fix this
-    // console.log('Setting ffmpeg path:', process.env.ffmpegPath);
-    ffmpeg.setFfmpegPath("C:\\Program Files\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe");
+/**
+ * 
+ * @param {string} question 
+ * @returns  {Promise<string>}
+ */
+const getInput = (question) => new Promise(r => rl.question(question, r));
+
+
+async function main() {
+    ensureDir(baseDir);
+
+    const url = await getInput('Enter the YouTube video or playlist URL: ');
+    const outputDirname = await getInput('Enter the output directory: ');
+
+    const outputDir = path.join(baseDir, sanitizeFilename(outputDirname));
+
+    ensureDir(outputDir);
+
+    if (url.includes('playlist?list=')) {
+        await downloadPlaylistAsAlbum(url, outputDir);
+    } else {
+        await downloadVideoAsMp3(url, outputDir);
+    }
+
+    rl.close();
+
+    console.log(`Downloaded to: ${outputDir}`);
 }
 
-ensureDir(baseDir);
-
-rl.question('Enter the YouTube video or playlist URL: ', async (url) => {
-    rl.question('Enter the output directory: ', async (outputDir) => {
-        // make sure the output directory is sanitized
-        outputDir = sanitizeFilename(outputDir);
-        outputDir = path.join(baseDir, outputDir);
-        ensureDir(outputDir);
-        if (url.includes('playlist?list=')) {
-            await downloadPlaylistAsAlbum(url, outputDir);
-        } else {
-            await downloadVideoAsMp3(url, outputDir);
-        }
-        rl.close();
-    });
-});
+main();
